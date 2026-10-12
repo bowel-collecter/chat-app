@@ -1,0 +1,16 @@
+{
+  "name": "land-ki-baatein",
+  "version": "1.0.0",
+  "description": "land ki baatein Chat Application",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.22.3",
+    "multer": "^2.4.0",
+    "socket.io": "^4.8.4",
+    "sqlite3": "^5.1.7"
+  }
+}

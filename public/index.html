@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>land ki baatein - Secure Messenger</title>
+  <style>
+    :root {
+      --glass-opacity: 0.85;
+      --glass-blur: 20px;
+      --bg: #0d0f18;
+      --surface: rgba(22, 26, 39, var(--glass-opacity));
+      --accent: #bd93f9;
+      --cyan: #8be9fd;
+      --text: #f8f8f2;
+      --muted: #8b9bb4;
+      --border: rgba(189, 147, 249, 0.25);
+    }
+
+    body[data-theme="cyberpunk"] {
+      --accent: #00f0ff;
+      --cyan: #00f0ff;
+      --border: rgba(0, 240, 255, 0.3);
+    }
+    body[data-theme="catppuccin"] {
+      --accent: #cba6f7;
+      --cyan: #89dceb;
+      --border: rgba(203, 166, 247, 0.3);
+    }
+    body[data-theme="matrix"] {
+      --accent: #00ff66;
+      --cyan: #50fa7b;
+      --border: rgba(0, 255, 102, 0.3);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: monospace; }
+    html, body { background: var(--bg); color: var(--text); height: 100vh; display: flex; overflow: hidden; }
+
+    #custom-bg-layer {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background-size: cover; background-position: center; background-repeat: no-repeat;
+      z-index: -2; pointer-events: none;
+    }
+    
+    @keyframes severeEarthquake {
+      0% { transform: translate(0, 0) rotate(0deg); }
+      5% { transform: translate(-25px, 20px) rotate(-6deg); }
+      10% { transform: translate(25px, -20px) rotate(6deg); }
+      20% { transform: translate(30px, 25px) rotate(8deg); }
+      40% { transform: translate(15px, -15px) rotate(6deg); }
+      60% { transform: translate(10px, 10px) rotate(2deg); }
+      100% { transform: translate(0, 0) rotate(0deg); }
+    }
+    .shake-it { animation: severeEarthquake 0.6s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+
+    @keyframes slideInUp {
+      from { opacity: 0; transform: translateY(20px) scale(0.95); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .message {
+      max-width: 65%; padding: 10px; border-radius: 6px; font-size: 11px;
+      background: var(--surface); border: 1px solid var(--border);
+      backdrop-filter: blur(var(--glass-blur)); word-break: break-all;
+      animation: slideInUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+    .message.mine { align-self: flex-end; background: rgba(189, 147, 249, 0.2); border-color: var(--accent); }
+
+    .list-item { padding: 8px; border-radius: 4px; cursor: pointer; font-size: 11px; color: var(--muted); }
+    .list-item:hover, .list-item.active { background: rgba(139, 233, 253, 0.15); color: var(--cyan); border: 1px solid var(--border); }
+
+    #auth-screen { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .auth-card { background: var(--surface); border: 1px solid var(--accent); padding: 24px; border-radius: 8px; width: 300px; display: flex; flex-direction: column; gap: 12px; backdrop-filter: blur(var(--glass-blur)); }
+    .input { background: #000; border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 4px; outline: none; }
+    .btn { background: rgba(189,147,249,0.15); border: 1px solid var(--accent); color: var(--accent); padding: 8px; cursor: pointer; border-radius: 4px; font-weight: bold; }
+    .btn:hover { background: var(--accent); color: #000; }
+
+    .app-container { display: flex; width: 100vw; height: 100vh; overflow: hidden; background: transparent; }
+    .sidebar { width: 260px; min-width: 180px; max-width: 500px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 14px; gap: 10px; flex-shrink: 0; backdrop-filter: blur(var(--glass-blur)); }
+    
+    #sidebar-resizer { width: 5px; cursor: col-resize; background: var(--border); opacity: 0.5; flex-shrink: 0; }
+    #sidebar-resizer:hover, #sidebar-resizer.resizing { background: var(--cyan); opacity: 1; }
+
+    .chat-area { flex: 1; display: flex; flex-direction: column; background: transparent; height: 100vh; }
+    .section-title { font-size: 10px; color: var(--muted); text-transform: uppercase; margin-top: 10px; }
+    
+    .chat-header { height: 50px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-weight: bold; color: var(--cyan); backdrop-filter: blur(var(--glass-blur)); }
+    .messages-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+    .chat-input-bar { padding: 15px; background: var(--surface); border-top: 1px solid var(--border); display: flex; gap: 10px; align-items: center; backdrop-filter: blur(var(--glass-blur)); }
+
+    /* Call Overlay */
+    #call-modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 300;
+      display: none; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+    }
+    .video-grid { display: flex; gap: 15px; justify-content: center; align-items: center; flex-wrap: wrap; width: 80vw; height: 60vh; }
+    video { width: 450px; height: 320px; background: #000; border: 2px solid var(--accent); border-radius: 8px; object-fit: cover; }
+    .call-controls { display: flex; gap: 15px; }
+
+    #settings-modal {
+      position: fixed; top: 60px; right: 20px; background: var(--surface); border: 1px solid var(--accent); border-radius: 8px; padding: 16px; width: 280px; z-index: 200; display: none; flex-direction: column; gap: 12px; backdrop-filter: blur(var(--glass-blur)); font-size: 11px;
+    }
+  </style>
+</head>
+<body id="app-body">
+
+  <div id="custom-bg-layer"></div>
+  <input type="file" id="local-wallpaper-input" accept="image/*" style="display:none;" onchange="handleLocalWallpaper(event)">
+
+  <!-- Call Modal -->
+  <div id="call-modal">
+    <div id="call-status" style="color:var(--cyan); font-size:14px; font-weight:bold;">Active Call</div>
+    <div class="video-grid">
+      <video id="local-video" autoplay muted playsinline></video>
+      <video id="remote-video" autoplay playsinline></video>
+    </div>
+    <div class="call-controls">
+      <button class="btn" onclick="toggleAudio()">🎤 Mute/Unmute</button>
+      <button class="btn" onclick="toggleVideo()">📹 Cam On/Off</button>
+      <button class="btn" style="border-color:var(--cyan); color:var(--cyan);" onclick="startScreenShare()">🖥️ Share Screen</button>
+      <button class="btn" style="background:rgba(255,85,85,0.3); color:#ff5555; border-color:#ff5555;" onclick="endCall(true)">🛑 End Call</button>
+    </div>
+  </div>
+
+  <div id="auth-screen">
+    <div class="auth-card">
+      <h2 style="color:var(--accent); font-size:14px;">// land ki baatein LOGIN</h2>
+      <input type="text" id="auth-username" class="input" placeholder="Username">
+      <input type="password" id="auth-password" class="input" placeholder="Password">
+      <button class="btn" onclick="login()">LOGIN</button>
+      <button class="btn" style="border-color:var(--cyan); color:var(--cyan);" onclick="register()">REGISTER</button>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <div class="sidebar" id="sidebar">
+      <div style="font-weight:bold; color:var(--accent); display:flex; justify-content:space-between; align-items:center;">
+        <span>// land ki baatein</span>
+        <button class="btn" style="padding:2px 6px; font-size:9px;" onclick="toggleSettingsModal()">⚙</button>
+      </div>
+      <div id="logged-user-lbl" style="font-size:10px; color:var(--cyan);"></div>
+      
+      <div class="section-title">Direct Messages</div>
+      <input type="text" id="new-friend-input" class="input" placeholder="Add Friend username...">
+      <div id="friends-list" style="display:flex; flex-direction:column; gap:4px; max-height:150px; overflow-y:auto;"></div>
+
+      <div class="section-title">Groups</div>
+      <input type="text" id="new-group-input" class="input" placeholder="Create/Join Group...">
+      <div id="groups-list" style="display:flex; flex-direction:column; gap:4px; max-height:150px; overflow-y:auto;"></div>
+    </div>
+
+    <div id="sidebar-resizer"></div>
+
+    <div class="chat-area">
+      <div class="chat-header" id="current-chat-title">
+        <span>Select a chat or group</span>
+        <div id="call-action-btns" style="display:none; gap:8px;">
+          <button class="btn" style="padding:4px 8px; font-size:10px;" onclick="startCall('audio')">📞 Voice Call</button>
+          <button class="btn" style="padding:4px 8px; font-size:10px;" onclick="startCall('video')">📹 Video Call</button>
+        </div>
+      </div>
+      <div class="messages-box" id="messages-box"></div>
+      <div class="chat-input-bar">
+        <input type="file" id="file-selector" style="display:none" onchange="sendFile(event)">
+        <button class="btn" onclick="document.getElementById('file-selector').click()" title="Attach file">📎</button>
+        <input type="text" id="message-input" class="input" style="flex:1;" placeholder="Type a message...">
+        <button class="btn" onclick="sendMessage()">SEND</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings-modal">
+    <div style="display:flex; justify-content:space-between; align-items:center; font-weight:bold; color:var(--accent);">
+      <span>// CUSTOMIZATION</span>
+      <button onclick="toggleSettingsModal()" style="background:none; border:none; color:var(--text); cursor:pointer;">✕</button>
+    </div>
+    <div>
+      <label>Color Theme:</label>
+      <select id="theme-select" class="input" style="width:100%; margin-top:4px;" onchange="changeTheme(this.value)">
+        <option value="dracula">Dracula (Default)</option>
+        <option value="cyberpunk">Cyberpunk Neon</option>
+        <option value="catppuccin">Catppuccin Pastel</option>
+        <option value="matrix">Matrix Green</option>
+      </select>
+    </div>
+    <div>
+      <label>Wallpaper URL:</label>
+      <div style="display:flex; gap:6px; margin-top:4px;">
+        <input type="text" id="wallpaper-input" class="input" style="flex:1;" placeholder="Paste image link..." onchange="changeWallpaper(this.value)">
+        <button class="btn" onclick="document.getElementById('local-wallpaper-input').click()">📁 LOCAL</button>
+      </div>
+    </div>
+    <div>
+      <label>Glass Transparency:</label>
+      <input type="range" id="opacity-slider" min="0.3" max="1" step="0.05" value="0.85" style="width:100%; margin-top:4px;" oninput="changeOpacity(this.value)">
+    </div>
+    <button class="btn" style="background:rgba(255,85,85,0.2); color:#ff5555; border-color:#ff5555;" onclick="clearWallpaper()">Remove Wallpaper</button>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let currentUser = null;
+    let currentRecipient = null;
+    let isGroupChat = false;
+    let friends = [];
+    let groups = [];
+
+    // WebRTC Variables
+    let localStream = null;
+    let peerConnection = null;
+    let pendingCandidates = [];
+    const iceServers = { 
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ] 
+    };
+
+    const sidebar = document.getElementById('sidebar');
+    const resizer = document.getElementById('sidebar-resizer');
+    let isResizing = false;
+
+    function applyUserPreferences() {
+      const savedWidth = localStorage.getItem(`sidebar_width_${currentUser}`);
+      if (savedWidth) sidebar.style.width = `${savedWidth}px`;
+      const savedTheme = localStorage.getItem(`theme_${currentUser}`) || 'dracula';
+      document.getElementById('theme-select').value = savedTheme;
+      changeTheme(savedTheme, false);
+      const savedWall = localStorage.getItem(`wallpaper_${currentUser}`) || '';
+      if (savedWall) {
+        document.getElementById('wallpaper-input').value = savedWall.startsWith('data:') ? '[Local Image]' : savedWall;
+        document.getElementById('custom-bg-layer').style.backgroundImage = `url("${savedWall}")`;
+      }
+      const savedOpacity = localStorage.getItem(`opacity_${currentUser}`) || '0.85';
+      document.getElementById('opacity-slider').value = savedOpacity;
+      changeOpacity(savedOpacity, false);
+    }
+
+    function toggleSettingsModal() {
+      const modal = document.getElementById('settings-modal');
+      modal.style.display = modal.style.display === 'flex' ? 'none' : 'flex';
+    }
+
+    function changeTheme(themeName, save = true) {
+      if (themeName === 'dracula') document.body.removeAttribute('data-theme');
+      else document.body.setAttribute('data-theme', themeName);
+      if (save && currentUser) localStorage.setItem(`theme_${currentUser}`, themeName);
+    }
+
+    function changeWallpaper(url, save = true) {
+      document.getElementById('custom-bg-layer').style.backgroundImage = url ? `url("${url}")` : 'none';
+      if (save && currentUser) localStorage.setItem(`wallpaper_${currentUser}`, url);
+    }
+
+    function handleLocalWallpaper(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64Img = e.target.result;
+        document.getElementById('wallpaper-input').value = '[Local Image]';
+        document.getElementById('custom-bg-layer').style.backgroundImage = `url("${base64Img}")`;
+        if (currentUser) localStorage.setItem(`wallpaper_${currentUser}`, base64Img);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearWallpaper() {
+      document.getElementById('wallpaper-input').value = '';
+      document.getElementById('custom-bg-layer').style.backgroundImage = 'none';
+      if (currentUser) localStorage.removeItem(`wallpaper_${currentUser}`);
+    }
+
+    function changeOpacity(val, save = true) {
+      document.documentElement.style.setProperty('--glass-opacity', val);
+      if (save && currentUser) localStorage.setItem(`opacity_${currentUser}`, val);
+    }
+
+    resizer.addEventListener('mousedown', () => { 
+      isResizing = true; 
+      resizer.classList.add('resizing'); 
+      document.body.style.cursor = 'col-resize'; 
+      document.body.style.userSelect = 'none'; 
+    });
+    window.addEventListener('mousemove', (e) => { 
+      if (!isResizing) return; 
+      sidebar.style.width = `${Math.min(Math.max(e.clientX, 180), 500)}px`; 
+    });
+    window.addEventListener('mouseup', () => {
+      if (isResizing) { 
+        isResizing = false; 
+        resizer.classList.remove('resizing'); 
+        document.body.style.cursor = ''; 
+        document.body.style.userSelect = ''; 
+        if (currentUser) localStorage.setItem(`sidebar_width_${currentUser}`, parseInt(sidebar.style.width, 10)); 
+      }
+    });
+
+    document.getElementById('new-friend-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addFriend(); } });
+    document.getElementById('new-group-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); createGroup(); } });
+    document.getElementById('message-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendMessage(); } });
+
+    async function register() {
+      const u = document.getElementById('auth-username').value.trim();
+      const p = document.getElementById('auth-password').value;
+      if (!u || !p) return alert('Please enter username and password.');
+      try {
+        const res = await fetch('/api/register', { 
+          method: 'POST', 
+          headers: {'Content-Type': 'application/json'}, 
+          body: JSON.stringify({ username: u, password: p }) 
+        });
+        const data = await res.json();
+        if (data.success) alert('Registered successfully! Now log in.'); 
+        else alert(data.error);
+      } catch (e) {
+        alert('Server unreachable.');
+      }
+    }
+
+    async function login() {
+      const u = document.getElementById('auth-username').value.trim();
+      const p = document.getElementById('auth-password').value;
+      if (!u || !p) return alert('Please enter username and password.');
+      try {
+        const res = await fetch('/api/login', { 
+          method: 'POST', 
+          headers: {'Content-Type': 'application/json'}, 
+          body: JSON.stringify({ username: u, password: p }) 
+        });
+        const data = await res.json();
+        if (data.success) {
+          currentUser = data.username;
+          document.getElementById('auth-screen').style.display = 'none';
+          document.getElementById('logged-user-lbl').innerText = `Logged in as: ${currentUser}`;
+          socket.emit('join_app', currentUser);
+          applyUserPreferences();
+          loadUserData();
+        } else {
+          alert(data.error);
+        }
+      } catch (e) {
+        alert('Server connection error.');
+      }
+    }
+
+    async function loadUserData() {
+      const res = await fetch(`/api/user-data/${currentUser}`);
+      const data = await res.json();
+      friends = data.friends || [];
+      groups = data.groups || [];
+      groups.forEach(g => socket.emit('join_group_room', g));
+      renderLists();
+    }
+
+    async function addFriend() {
+      const friendName = document.getElementById('new-friend-input').value.trim();
+      if (!friendName || friends.includes(friendName) || friendName === currentUser) return;
+      const res = await fetch('/api/add-friend', { 
+        method: 'POST', 
+        headers: {'Content-Type': 'application/json'}, 
+        body: JSON.stringify({ username: currentUser, friend: friendName }) 
+      });
+      const data = await res.json();
+      if (data.success) { 
+        friends.push(friendName); 
+        document.getElementById('new-friend-input').value = ''; 
+        renderLists(); 
+      } else { 
+        alert(data.error || 'Could not add friend.'); 
+      }
+    }
+
+    async function createGroup() {
+      const groupName = document.getElementById('new-group-input').value.trim();
+      if (!groupName || groups.includes(groupName)) return;
+      const res = await fetch('/api/join-group', { 
+        method: 'POST', 
+        headers: {'Content-Type': 'application/json'}, 
+        body: JSON.stringify({ username: currentUser, groupName: groupName }) 
+      });
+      const data = await res.json();
+      if (data.success) { 
+        groups.push(groupName); 
+        socket.emit('join_group_room', groupName); 
+        document.getElementById('new-group-input').value = ''; 
+        renderLists(); 
+      }
+    }
+
+    function renderLists() {
+      const fBox = document.getElementById('friends-list'); 
+      fBox.innerHTML = '';
+      friends.forEach(f => { 
+        fBox.innerHTML += `<div class="list-item" onclick="selectChat('${f}', false)">@ ${f}</div>`; 
+      });
+      const gBox = document.getElementById('groups-list'); 
+      gBox.innerHTML = '';
+      groups.forEach(g => { 
+        gBox.innerHTML += `<div class="list-item" onclick="selectChat('${g}', true)"># ${g}</div>`; 
+      });
+    }
+
+    async function selectChat(name, isGroup) {
+      currentRecipient = name;
+      isGroupChat = isGroup;
+      document.getElementById('current-chat-title').querySelector('span').innerText = (isGroup ? '#' : '@') + ' ' + name;
+      document.getElementById('call-action-btns').style.display = isGroup ? 'none' : 'flex';
+      
+      const box = document.getElementById('messages-box'); 
+      box.innerHTML = '';
+      try {
+        const res = await fetch(`/api/messages?user1=${currentUser}&user2=${name}&isGroup=${isGroup}`);
+        const messages = await res.json();
+        messages.forEach(msg => {
+          const isMine = msg.sender === currentUser;
+          let fileHtml = msg.file_url ? `<br><a href="${msg.file_url}" download="${msg.filename}" style="color:var(--cyan)">📥 Download ${msg.filename}</a>` : '';
+          box.innerHTML += `<div class="message ${isMine ? 'mine' : ''}"><div style="font-size:9px; color:var(--muted); margin-bottom:2px;">${msg.sender}</div><div>${msg.content}</div>${fileHtml}</div>`;
+        });
+        box.scrollTop = box.scrollHeight;
+      } catch (err) { 
+        console.error('Failed to load chat history.'); 
+      }
+    }
+
+    function sendMessage() {
+      const text = document.getElementById('message-input').value.trim();
+      if (!text || !currentRecipient) return;
+      socket.emit('send_message', { 
+        sender: currentUser, 
+        recipient: currentRecipient, 
+        is_group: isGroupChat, 
+        content: text, 
+        file_url: null, 
+        filename: null 
+      });
+      document.getElementById('message-input').value = '';
+    }
+
+    async function sendFile(event) {
+      const file = event.target.files[0];
+      if (!file || !currentRecipient) return;
+      if (file.size > 200 * 1024 * 1024) return alert("File is too large! Max size is 200MB.");
+      
+      const formData = new FormData(); 
+      formData.append('file', file);
+      document.getElementById('current-chat-title').querySelector('span').innerText = "Uploading file...";
+      
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.success) {
+          socket.emit('send_message', { 
+            sender: currentUser, 
+            recipient: currentRecipient, 
+            is_group: isGroupChat, 
+            content: `Shared file: ${data.filename}`, 
+            file_url: data.fileUrl, 
+            filename: data.filename 
+          });
+        }
+      } catch (err) { 
+        alert('Error uploading file.'); 
+      } finally {
+        document.getElementById('current-chat-title').querySelector('span').innerText = (isGroupChat ? '#' : '@') + ' ' + currentRecipient;
+      }
+    }
+
+    // Hardware Fallback Media Stream
+    async function getSafeMediaStream(wantVideo) {
+      try {
+        return await navigator.mediaDevices.getUserMedia({ video: wantVideo, audio: true });
+      } catch (e1) {
+        try {
+          return await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+        } catch (e2) {
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          const dst = osc.connect(ctx.createMediaStreamDestination());
+          osc.start();
+          const silentAudio = dst.stream.getAudioTracks()[0];
+          silentAudio.enabled = false;
+
+          const dummyStream = new MediaStream([silentAudio]);
+          if (wantVideo) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 320; canvas.height = 240;
+            const canvasStream = canvas.captureStream(10);
+            dummyStream.addTrack(canvasStream.getVideoTracks()[0]);
+          }
+          return dummyStream;
+        }
+      }
+    }
+
+    function createPeerConnectionInstance(targetUser) {
+      const pc = new RTCPeerConnection(iceServers);
+      pendingCandidates = [];
+
+      pc.ontrack = (event) => {
+        document.getElementById('remote-video').srcObject = event.streams[0];
+      };
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('ice_candidate', {
+            candidate: event.candidate,
+            to: targetUser,
+            from: currentUser
+          });
+        }
+      };
+
+      return pc;
+    }
+
+    async function startCall(type) {
+      if (!currentRecipient || isGroupChat) return;
+      document.getElementById('call-modal').style.display = 'flex';
+      document.getElementById('call-status').innerText = `Calling ${currentRecipient}...`;
+      
+      try {
+        localStream = await getSafeMediaStream(type === 'video');
+        document.getElementById('local-video').srcObject = localStream;
+
+        peerConnection = createPeerConnectionInstance(currentRecipient);
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+
+        socket.emit('call_user', { 
+          userToCall: currentRecipient, 
+          signalData: offer, 
+          from: currentUser, 
+          isGroup: false 
+        });
+      } catch (err) {
+        alert('Call initialization failed.');
+        endCall(false);
+      }
+    }
+
+    socket.on('incoming_call', async (data) => {
+      if (confirm(`Incoming call from ${data.from}. Accept?`)) {
+        currentRecipient = data.from;
+        isGroupChat = false;
+        document.getElementById('call-modal').style.display = 'flex';
+        document.getElementById('call-status').innerText = `Connected with ${data.from}`;
+
+        try {
+          localStream = await getSafeMediaStream(true);
+          document.getElementById('local-video').srcObject = localStream;
+
+          peerConnection = createPeerConnectionInstance(data.from);
+          localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(data.signal));
+          
+          while (pendingCandidates.length > 0) {
+            await peerConnection.addIceCandidate(pendingCandidates.shift());
+          }
+
+          const answer = await peerConnection.createAnswer();
+          await peerConnection.setLocalDescription(answer);
+          socket.emit('answer_call', { signal: answer, to: data.from });
+        } catch (err) {
+          alert('Could not establish call.');
+          endCall(false);
+        }
+      } else {
+        socket.emit('end_call_signal', { to: data.from });
+      }
+    });
+
+    socket.on('call_accepted', async (signal) => {
+      document.getElementById('call-status').innerText = `Connected!`;
+      try {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
+        while (pendingCandidates.length > 0) {
+          await peerConnection.addIceCandidate(pendingCandidates.shift());
+        }
+      } catch (err) {
+        console.error('Remote description error:', err);
+      }
+    });
+
+    socket.on('ice_candidate', async (data) => {
+      try {
+        const candidate = new RTCIceCandidate(data.candidate);
+        if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+          await peerConnection.addIceCandidate(candidate);
+        } else {
+          pendingCandidates.push(candidate);
+        }
+      } catch (err) {
+        console.error('ICE candidate error:', err);
+      }
+    });
+
+    socket.on('call_ended', () => {
+      endCall(false);
+    });
+
+    async function startScreenShare() {
+      try {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const videoTrack = screenStream.getVideoTracks()[0];
+        
+        const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (sender) sender.replaceTrack(videoTrack);
+
+        document.getElementById('local-video').srcObject = screenStream;
+
+        videoTrack.onended = async () => {
+          const camStream = await getSafeMediaStream(true);
+          localStream = camStream;
+          document.getElementById('local-video').srcObject = camStream;
+          if (sender) sender.replaceTrack(camStream.getVideoTracks()[0]);
+        };
+      } catch (err) { 
+        alert('Could not share screen.'); 
+      }
+    }
+
+    function toggleAudio() {
+      if (localStream) {
+        const audioTrack = localStream.getAudioTracks()[0];
+        if (audioTrack) audioTrack.enabled = !audioTrack.enabled;
+      }
+    }
+
+    function toggleVideo() {
+      if (localStream) {
+        const videoTrack = localStream.getVideoTracks()[0];
+        if (videoTrack) videoTrack.enabled = !videoTrack.enabled;
+      }
+    }
+
+    function endCall(notifyPeer = true) {
+      if (notifyPeer && currentRecipient) {
+        socket.emit('end_call_signal', { to: currentRecipient });
+      }
+      if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+      }
+      if (peerConnection) {
+        peerConnection.close();
+      }
+      peerConnection = null;
+      localStream = null;
+      pendingCandidates = [];
+      document.getElementById('call-modal').style.display = 'none';
+      document.getElementById('local-video').srcObject = null;
+      document.getElementById('remote-video').srcObject = null;
+    }
+
+    socket.on('receive_message', (data) => {
+      const isRelevant = data.is_group 
+        ? (data.recipient === currentRecipient) 
+        : (data.sender === currentRecipient || data.recipient === currentRecipient);
+        
+      if (!isRelevant) return;
+
+      const box = document.getElementById('messages-box');
+      const isMine = data.sender === currentUser;
+      let fileHtml = data.file_url ? `<br><a href="${data.file_url}" download="${data.filename}" style="color:var(--cyan)">📥 Download ${data.filename}</a>` : '';
+
+      box.innerHTML += `<div class="message ${isMine ? 'mine' : ''}"><div style="font-size:9px; color:var(--muted); margin-bottom:2px;">${data.sender}</div><div>${data.content}</div>${fileHtml}</div>`;
+      box.scrollTop = box.scrollHeight;
+
+      if (!isMine) {
+        const container = document.querySelector('.app-container');
+        container.classList.remove('shake-it'); 
+        void container.offsetWidth; 
+        container.classList.add('shake-it');
+      }
+    });
+  </script>
+</body>
+</html>
